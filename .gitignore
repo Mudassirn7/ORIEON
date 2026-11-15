@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Generated artifacts (folder structure kept via .gitkeep)
+*.pt
+results/*
+!results/.gitkeep
+figures/*
+!figures/.gitkeep
