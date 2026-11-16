@@ -147,7 +147,8 @@ def to_price(close_t, scaled_ret, y_scaler):
 def _finish_neural(name, model, seconds, Xte, dates_te, close_te, actual_te,
                    y_scaler, results_dir=RESULTS_DIR):
     pred = to_price(close_te, predict_torch(model, Xte), y_scaler)
-    evaluate.save_predictions(name, dates_te, actual_te, pred, results_dir)
+    evaluate.save_predictions(name, dates_te, actual_te, pred, results_dir,
+                              close=close_te)
     return {"name": name, "n_params": count_parameters(model),
             "train_seconds": seconds}
 
@@ -185,12 +186,30 @@ def run_group_a(df, X, y, n_train, y_scaler, results_dir=RESULTS_DIR):
         est.fit(X[:n_train], y[:n_train])
         seconds = time.perf_counter() - t0
         pred = to_price(close_te, est.predict(X[n_train:]), y_scaler)
-        evaluate.save_predictions(name, dates_te, actual, pred, results_dir)
+        evaluate.save_predictions(name, dates_te, actual, pred, results_dir,
+                                  close=close_te)
         records.append({"name": name, "n_params": None,
                         "train_seconds": seconds})
-    # Naive baseline: tomorrow's price = today's price (return = 0)
-    evaluate.save_predictions("Naive", dates_te, actual, close_te, results_dir)
+    # --- Baselines ----------------------------------------------------------
+    # Naive (zero-return): tomorrow's price = today's price
+    evaluate.save_predictions("Naive", dates_te, actual, close_te, results_dir,
+                              close=close_te)
     records.append({"name": "Naive", "n_params": None, "train_seconds": 0.0})
+
+    # Naive-Drift: today's price + average historical daily move.
+    # Drift = mean TRAIN log-return only (no test leakage).
+    drift_ret = float(df[TARGET].iloc[:n_train].mean())
+    pred = close_te * np.exp(drift_ret)
+    evaluate.save_predictions("Naive-Drift", dates_te, actual, pred,
+                              results_dir, close=close_te)
+    records.append({"name": "Naive-Drift", "n_params": None,
+                    "train_seconds": 0.0})
+
+    # SMA-5: tomorrow's price = mean of the last 5 closes (smooths noise).
+    sma5 = df["Gold_Close"].rolling(5).mean().iloc[n_train:].values
+    evaluate.save_predictions("SMA-5", dates_te, actual, sma5, results_dir,
+                              close=close_te)
+    records.append({"name": "SMA-5", "n_params": None, "train_seconds": 0.0})
     return records
 
 
