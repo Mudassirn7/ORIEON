@@ -165,7 +165,7 @@ class DailyGraphEncoder(nn.Module):
         """x: (B, T, n) -> daily readout sequence (B, T, width)."""
         b, t, n = x.shape
         h = torch.tanh(self.value_proj(x.reshape(b * t, n, 1)) + self.node_embedding)
-        z = self.message_pass(h)                                # (B*T, n, width)
+        z = self.message_pass(h) + h                            # residual link (B*T, n, width)
         pooled = torch.cat([z.mean(dim=1), z[:, GOLD_NODE_IDX]], dim=-1)  # (B*T, 2w)
         r = self.readout(pooled)                                # (B*T, width)
         return r.reshape(b, t, self.width)
@@ -194,11 +194,12 @@ class GraphOnlyModel(nn.Module):
     def __init__(self, variant: str, **kw):
         super().__init__()
         self.encoder = DailyGraphEncoder(variant, **kw)
-        self.head = make_head(WIDTH)
+        self.head = make_head(2 * WIDTH)
 
     def forward(self, x):  # x: (B, T, F)
         r = self.encoder.encode(x)          # (B, T, width)
-        return self.head(r.mean(dim=1)).squeeze(-1)
+        z = torch.cat([r.mean(dim=1), r[:, -1]], dim=-1)  # mean + last day
+        return self.head(z).squeeze(-1)
 
 
 # ---------------------------------------------------------------------------
