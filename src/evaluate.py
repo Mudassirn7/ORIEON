@@ -17,17 +17,8 @@ ROOT = Path(__file__).resolve().parents[1]
 RESULTS_DIR = ROOT / "results"
 
 
-def compute_metrics(actual: np.ndarray, predicted: np.ndarray,
-                    close: np.ndarray | None = None) -> dict:
-    """MAE, MSE, RMSE, R^2, MAPE (division-by-zero guarded), n.
-
-    If `close` (today's close per test day) is given, also reports
-    return-space metrics — these expose the price-level "persistence
-    illusion" (a naive zero-return forecast scores R^2 ~ 0.998 on prices):
-      Ret_RMSE / Ret_R2: metrics on log-returns log(pred/close) vs
-                         log(actual/close). Naive scores Ret_R2 = 0 exactly.
-      DirAcc:            % of days with correctly predicted move direction.
-    """
+def compute_metrics(actual: np.ndarray, predicted: np.ndarray) -> dict:
+    """MAE, MSE, RMSE, R^2, MAPE (division-by-zero guarded), n."""
     actual = np.asarray(actual, dtype=float)
     predicted = np.asarray(predicted, dtype=float)
     err = predicted - actual
@@ -39,53 +30,33 @@ def compute_metrics(actual: np.ndarray, predicted: np.ndarray,
     r2 = float(1.0 - ss_res / ss_tot) if ss_tot > 0 else float("nan")
     nz = actual != 0  # guard against division by zero
     mape = float(np.mean(np.abs(err[nz] / actual[nz])) * 100.0) if nz.any() else float("nan")
-    out = {"MAE": mae, "MSE": mse, "RMSE": rmse, "R2": r2, "MAPE": mape,
-           "n": int(len(actual))}
-
-    if close is not None:
-        close = np.asarray(close, dtype=float)
-        ret_a = np.log(actual / close)
-        ret_p = np.log(predicted / close)
-        rerr = ret_p - ret_a
-        ret_rmse = float(np.sqrt(np.mean(rerr ** 2)))
-        r_ss_res = float(np.sum(rerr ** 2))
-        r_ss_tot = float(np.sum((ret_a - ret_a.mean()) ** 2))
-        ret_r2 = float(1.0 - r_ss_res / r_ss_tot) if r_ss_tot > 0 else float("nan")
-        dir_acc = float(np.mean(np.sign(ret_p) == np.sign(ret_a)) * 100.0)
-        out.update({"Ret_RMSE": ret_rmse, "Ret_R2": ret_r2, "DirAcc": dir_acc})
-    return out
+    return {"MAE": mae, "MSE": mse, "RMSE": rmse, "R2": r2, "MAPE": mape,
+            "n": int(len(actual))}
 
 
 def save_predictions(name: str, dates, actual, predicted,
-                     results_dir: Path = RESULTS_DIR,
-                     close: np.ndarray | None = None) -> Path:
-    """Save results/<ModelName>_test_predictions.csv
-    (Date, actual, predicted[, Close])."""
+                     results_dir: Path = RESULTS_DIR) -> Path:
+    """Save results/<ModelName>_test_predictions.csv (Date, actual, predicted)."""
     results_dir.mkdir(parents=True, exist_ok=True)
     out = results_dir / f"{name}_test_predictions.csv"
     dates = pd.Series(pd.to_datetime(list(dates))).dt.strftime("%Y-%m-%d")
-    frame = pd.DataFrame({
+    pd.DataFrame({
         "Date": dates,
         "actual": np.asarray(actual, dtype=float),
         "predicted": np.asarray(predicted, dtype=float),
-    })
-    if close is not None:
-        frame["Close"] = np.asarray(close, dtype=float)
-    frame.to_csv(out, index=False)
+    }).to_csv(out, index=False)
     return out
 
 
 def load_saved_metrics(results_dir: Path = RESULTS_DIR) -> dict:
     """Recompute metrics from the saved CSVs (metrics always come from the
-    saved arrays, per protocol). Return-space metrics are added when the CSV
-    carries a Close column."""
+    saved arrays, per protocol)."""
     metrics = {}
     for csv in sorted(results_dir.glob("*_test_predictions.csv")):
         name = csv.name.replace("_test_predictions.csv", "")
         df = pd.read_csv(csv)
-        close = df["Close"].values if "Close" in df.columns else None
         metrics[name] = compute_metrics(df["actual"].values,
-                                        df["predicted"].values, close)
+                                        df["predicted"].values)
     return metrics
 
 
