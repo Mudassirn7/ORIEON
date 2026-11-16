@@ -102,7 +102,15 @@ def decompose_trailing_vmd(close: pd.Series) -> pd.DataFrame:
     and we keep the modes' values at day t. Days with < DECOMP_MIN_LEN history
     get 0.0 (first weeks of 2006; negligible after scaling).
     """
-    from vmdpy import VMD
+    try:
+        from vmdpy import VMD
+    except ImportError as e:
+        raise ImportError(
+            "vmdpy is not installed. On Colab/server run:\n"
+            "    pip install vmdpy pyswarms statsmodels\n"
+            "(Do NOT run 'pip install -r requirements.txt' on Colab — it can "
+            "overwrite the preinstalled CUDA torch build.)"
+        ) from e
 
     vals = close.to_numpy(dtype=float)
     n = len(vals)
