@@ -96,9 +96,11 @@ def summarize(records: list[dict], results_dir: Path = RESULTS_DIR) -> pd.DataFr
     metrics = load_saved_metrics(results_dir)
     rows = []
     for rec in records:
+        ts = rec.get("train_seconds")
+        ts = float("nan") if ts is None else round(float(ts), 2)
         row = {"Model": rec["name"],
                "n_params": rec.get("n_params"),
-               "train_seconds": round(rec.get("train_seconds", float("nan")), 2)}
+               "train_seconds": ts}
         row.update(metrics[rec["name"]])
         rows.append(row)
     table = pd.DataFrame(rows).sort_values("RMSE").reset_index(drop=True)

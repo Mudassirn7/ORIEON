@@ -163,14 +163,12 @@ def load_best_params():
 # ---------------------------------------------------------------------------
 # Group A — tree baselines (current-day 15-feature vector, no sequences)
 # ---------------------------------------------------------------------------
-def run_group_a(df, X, y, n_train, y_scaler, results_dir=RESULTS_DIR):
+def tree_registry():
+    """Tree models with the exact protocol hyperparameters (shared by
+    run_group_a and the stacking ensemble's out-of-sample refits)."""
     from lightgbm import LGBMRegressor
 
-    dates_te = df["Date"].iloc[n_train:]
-    close_te = df["Gold_Close"].iloc[n_train:].values
-    actual = df[PRICE_TARGET].iloc[n_train:].values
-
-    trees = {
+    return {
         "RandomForest": RandomForestRegressor(
             n_estimators=500, max_features=0.7, min_samples_leaf=1,
             random_state=SEED, n_jobs=-1),
@@ -179,6 +177,14 @@ def run_group_a(df, X, y, n_train, y_scaler, results_dir=RESULTS_DIR):
             subsample=0.85, colsample_bytree=0.8, reg_lambda=1.0,
             random_state=SEED),
     }
+
+
+def run_group_a(df, X, y, n_train, y_scaler, results_dir=RESULTS_DIR):
+    dates_te = df["Date"].iloc[n_train:]
+    close_te = df["Gold_Close"].iloc[n_train:].values
+    actual = df[PRICE_TARGET].iloc[n_train:].values
+
+    trees = tree_registry()
     records = []
     for name, est in trees.items():
         print(f"[Group A] training {name} ...")
@@ -216,6 +222,26 @@ def run_group_a(df, X, y, n_train, y_scaler, results_dir=RESULTS_DIR):
 # ---------------------------------------------------------------------------
 # Groups B, C, D — neural models
 # ---------------------------------------------------------------------------
+def model_registry(gcn_adj):
+    """Neural models in the comparison: (name, builder, default lr).
+
+    Group C (GNN-only) was removed from the comparison per the updated plan —
+    classes remain in models.py. Comparison = trees + MLP/LSTM/GRU + hybrids +
+    baselines, followed by ensemble models (src/ensemble.py).
+    """
+    return [
+        # Group B — deep baselines (lr 1e-3)
+        ("MLP", lambda: MLP(), LR_DEEP),
+        ("LSTM", lambda: LSTMModel(), LR_DEEP),
+        ("GRU", lambda: GRUModel(), LR_DEEP),
+        # Group D — hybrids (lr 8e-4)
+        ("Dynamic-GNN+GRU", lambda: GraphTemporalModel("dynamic", "gru"), LR_GRAPH),
+        ("Dynamic-GNN+LSTM", lambda: GraphTemporalModel("dynamic", "lstm"), LR_GRAPH),
+        ("Static-Learned-GNN+GRU", lambda: GraphTemporalModel("static", "gru"), LR_GRAPH),
+        ("Static-Learned-GNN+LSTM", lambda: GraphTemporalModel("static", "lstm"), LR_GRAPH),
+    ]
+
+
 def run_neural_groups(df, X, y, n_train, y_scaler, results_dir=RESULTS_DIR):
     Xtr, ytr, Xte, _ = make_windows(X, y, n_train)
     dates_te = df["Date"].iloc[n_train:]
@@ -226,20 +252,7 @@ def run_neural_groups(df, X, y, n_train, y_scaler, results_dir=RESULTS_DIR):
     # GCN adjacency from TRAINING rows only.
     gcn_adj = compute_gcn_adjacency(X[:n_train])
 
-    registry = [
-        # Group B — deep baselines (lr 1e-3)
-        ("MLP", lambda: MLP(), LR_DEEP),
-        ("LSTM", lambda: LSTMModel(), LR_DEEP),
-        ("GRU", lambda: GRUModel(), LR_DEEP),
-        # Group C (GNN-only) removed from the comparison per updated plan —
-        # classes remain in models.py; comparison is trees + MLP/LSTM/GRU +
-        # hybrids + baselines, followed by an ensemble model.
-        # Group D — hybrids (lr 8e-4)
-        ("Dynamic-GNN+GRU", lambda: GraphTemporalModel("dynamic", "gru"), LR_GRAPH),
-        ("Dynamic-GNN+LSTM", lambda: GraphTemporalModel("dynamic", "lstm"), LR_GRAPH),
-        ("Static-Learned-GNN+GRU", lambda: GraphTemporalModel("static", "gru"), LR_GRAPH),
-        ("Static-Learned-GNN+LSTM", lambda: GraphTemporalModel("static", "lstm"), LR_GRAPH),
-    ]
+    registry = model_registry(gcn_adj)
 
     best = load_best_params()
     records = []

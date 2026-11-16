@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from . import train
+from . import ensemble, train
 from .prepare_data import prepare, split_indices
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -33,7 +33,9 @@ def run_cv(n_folds: int = N_FOLDS) -> pd.DataFrame:
               f"| train {n_train} | test {end - n_train}")
         print("=" * 72)
 
-        table = train.run_all_models(sub, results_dir=CV_DIR / f"fold_{k:02d}")
+        fold_dir = CV_DIR / f"fold_{k:02d}"
+        train.run_all_models(sub, results_dir=fold_dir)
+        table = ensemble.run_ensemble(sub, results_dir=fold_dir)
         table.insert(0, "fold", k)
         table.insert(1, "test_start", str(sub["Date"].iloc[n_train].date()))
         table.insert(2, "test_end", str(sub["Date"].iloc[-1].date()))
