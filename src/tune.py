@@ -66,11 +66,7 @@ def main():
         "MLP": lambda: M.MLP(),
         "LSTM": lambda: M.LSTMModel(),
         "GRU": lambda: M.GRUModel(),
-        "GCN-only": lambda: M.GraphOnlyModel("gcn", gcn_adjacency=gcn_adj),
-        "GraphSAGE-only": lambda: M.GraphOnlyModel("sage"),
-        "GAT-only": lambda: M.GraphOnlyModel("gat"),
-        "Static-Learned-GNN-only": lambda: M.GraphOnlyModel("static"),
-        "Dynamic-GNN-only": lambda: M.GraphOnlyModel("dynamic"),
+        # Group C (GNN-only) removed per updated plan; hybrids remain.
         "Dynamic-GNN+GRU": lambda: M.GraphTemporalModel("dynamic", "gru"),
         "Dynamic-GNN+LSTM": lambda: M.GraphTemporalModel("dynamic", "lstm"),
         "Static-Learned-GNN+GRU": lambda: M.GraphTemporalModel("static", "gru"),

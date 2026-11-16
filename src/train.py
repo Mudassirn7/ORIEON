@@ -231,12 +231,9 @@ def run_neural_groups(df, X, y, n_train, y_scaler, results_dir=RESULTS_DIR):
         ("MLP", lambda: MLP(), LR_DEEP),
         ("LSTM", lambda: LSTMModel(), LR_DEEP),
         ("GRU", lambda: GRUModel(), LR_DEEP),
-        # Group C — GNN-only candidates (lr 8e-4)
-        ("GCN-only", lambda: GraphOnlyModel("gcn", gcn_adjacency=gcn_adj), LR_GRAPH),
-        ("GraphSAGE-only", lambda: GraphOnlyModel("sage"), LR_GRAPH),
-        ("GAT-only", lambda: GraphOnlyModel("gat"), LR_GRAPH),
-        ("Static-Learned-GNN-only", lambda: GraphOnlyModel("static"), LR_GRAPH),
-        ("Dynamic-GNN-only", lambda: GraphOnlyModel("dynamic"), LR_GRAPH),
+        # Group C (GNN-only) removed from the comparison per updated plan —
+        # classes remain in models.py; comparison is trees + MLP/LSTM/GRU +
+        # hybrids + baselines, followed by an ensemble model.
         # Group D — hybrids (lr 8e-4)
         ("Dynamic-GNN+GRU", lambda: GraphTemporalModel("dynamic", "gru"), LR_GRAPH),
         ("Dynamic-GNN+LSTM", lambda: GraphTemporalModel("dynamic", "lstm"), LR_GRAPH),
