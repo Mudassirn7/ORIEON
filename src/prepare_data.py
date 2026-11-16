@@ -27,7 +27,17 @@ SENTIMENT_FEATURES = [
     "Positive_Ratio", "Negative_Ratio", "News_Available", "News_Count_Log",
 ]
 
-FEATURES = BASE_FEATURES + SENTIMENT_FEATURES  # exactly 15
+# --- Stage 2 (updated pipeline): leakage-free signal decomposition ---------
+# Trailing-window VMD of Gold_Close: at day t, ONLY the last DECOMP_WINDOW
+# closes up to and including t are decomposed — the decomposition never sees
+# future data (unlike most CEEMDAN/VMD gold papers, which decompose the full
+# series before splitting — that is data leakage).
+DECOMP_FEATURES = ["VMD_IMF1", "VMD_IMF2", "VMD_Resid"]
+DECOMP_WINDOW = 120   # trailing days fed to VMD
+DECOMP_K = 3          # modes: IMF1, IMF2, residual-ish smooth mode
+DECOMP_MIN_LEN = 40   # shorter history -> zeros (first ~40 days of 2006 only)
+
+FEATURES = BASE_FEATURES + SENTIMENT_FEATURES + DECOMP_FEATURES
 PRICE_TARGET = "y_close_t1"   # next-day close (metrics isi par bante hain)
 TARGET = "y_logret_t1"        # next-day log-return
 
@@ -85,6 +95,31 @@ def aggregate_daily(news_rel: pd.DataFrame) -> pd.DataFrame:
     return daily
 
 
+def decompose_trailing_vmd(close: pd.Series) -> pd.DataFrame:
+    """Leakage-free trailing VMD of the close series.
+
+    For each day t, VMD runs on close[max(0, t-DECOMP_WINDOW+1) : t+1] only
+    and we keep the modes' values at day t. Days with < DECOMP_MIN_LEN history
+    get 0.0 (first weeks of 2006; negligible after scaling).
+    """
+    from vmdpy import VMD
+
+    vals = close.to_numpy(dtype=float)
+    n = len(vals)
+    modes = np.zeros((n, DECOMP_K))
+    for t in range(n):
+        lo = max(0, t - DECOMP_WINDOW + 1)
+        seg = vals[lo: t + 1]
+        if len(seg) < DECOMP_MIN_LEN:
+            continue  # stays 0.0
+        u, _, _ = VMD(seg, alpha=2000, tau=0, K=DECOMP_K, DC=0, init=1,
+                      tol=1e-7)
+        modes[t] = u[:, -1]
+        if t % 500 == 0:
+            print(f"  [vmd] {t}/{n}")
+    return pd.DataFrame(modes, columns=DECOMP_FEATURES)
+
+
 def build_dataset(data_dir: Path = DATA_DIR) -> tuple[pd.DataFrame, dict]:
     """Full Section-2 pipeline. Returns (merged_df, protocol_info)."""
     gold, news = load_raw(data_dir)
@@ -107,12 +142,15 @@ def build_dataset(data_dir: Path = DATA_DIR) -> tuple[pd.DataFrame, dict]:
     # 8. News_Count_Log = log1p(News_Count).
     df["News_Count_Log"] = np.log1p(df["News_Count"])
 
+    # Stage 2: leakage-free trailing VMD features of Gold_Close.
+    df[DECOMP_FEATURES] = decompose_trailing_vmd(df["Gold_Close"])
+
     # Keep only protocol columns.
     df[TARGET] = np.log(df[PRICE_TARGET] / df["Gold_Close"])
     out = df[["Date"] + FEATURES + [PRICE_TARGET, TARGET]].copy()
 
-    # 9. Sanity checks: all 15 features + targets exist, no NaN.
-    assert len(FEATURES) == 15, f"expected 15 features, got {len(FEATURES)}"
+    # 9. Sanity checks: all features + targets exist, no NaN.
+    assert len(FEATURES) == len(set(FEATURES)), "duplicate feature names"
     missing_cols = [c for c in FEATURES + [PRICE_TARGET, TARGET] if c not in out.columns]
     assert not missing_cols, f"missing columns: {missing_cols}"
     nan_counts = out[FEATURES + [PRICE_TARGET, TARGET]].isna().sum()

@@ -216,29 +216,77 @@ def run_group_a(df, X, y, n_train, y_scaler, results_dir=RESULTS_DIR):
     evaluate.save_predictions("SMA-5", dates_te, actual, sma5, results_dir,
                               close=close_te)
     records.append({"name": "SMA-5", "n_params": None, "train_seconds": 0.0})
+
+    # Stage 3: RandomForest feature-importance report (training rows only).
+    rf = trees["RandomForest"]
+    imp = pd.Series(rf.feature_importances_, index=FEATURES).sort_values(
+        ascending=False)
+    imp.to_csv(results_dir / "feature_importance.csv", header=["importance"])
+    print(f"[Group A] feature importances -> {results_dir / 'feature_importance.csv'}")
     return records
+
+
+# ---------------------------------------------------------------------------
+# Stage 4 — ARIMA linear leg (leakage-free)
+# ---------------------------------------------------------------------------
+def run_linear_leg(df, n_train, results_dir=RESULTS_DIR):
+    """ARIMA on log prices. Order (p,1,q) picked by AIC on TRAIN rows only.
+    Rolling one-step-ahead forecasts over the test period: today's close is
+    appended (refit=False) only AFTER forecasting the next day."""
+    from statsmodels.tsa.arima.model import ARIMA
+
+    dates_te = df["Date"].iloc[n_train:]
+    close_te = df["Gold_Close"].iloc[n_train:].values
+    actual = df[PRICE_TARGET].iloc[n_train:].values
+    log_close = np.log(df["Gold_Close"].values)
+
+    best_order, best_aic = None, np.inf
+    for p in (0, 1, 2):
+        for q in (0, 1, 2):
+            try:
+                r = ARIMA(log_close[:n_train], order=(p, 1, q)).fit()
+                if r.aic < best_aic:
+                    best_aic, best_order = r.aic, (p, 1, q)
+            except Exception:
+                continue
+    print(f"[ARIMA] order={best_order}  train AIC={best_aic:.1f}")
+
+    t0 = time.perf_counter()
+    res = ARIMA(log_close[:n_train], order=best_order).fit()
+    preds = []
+    for i in range(n_train, len(df)):
+        res = res.append([log_close[i]], refit=False)  # reveal today's close
+        fc = res.forecast(steps=1)                     # predict tomorrow
+        preds.append(float(np.exp(np.asarray(fc).ravel()[0])))
+    seconds = time.perf_counter() - t0
+
+    evaluate.save_predictions("ARIMA", dates_te, actual, np.array(preds),
+                              results_dir, close=close_te)
+    return {"name": "ARIMA", "n_params": None, "train_seconds": seconds}
 
 
 # ---------------------------------------------------------------------------
 # Groups B, C, D — neural models
 # ---------------------------------------------------------------------------
-def model_registry(gcn_adj):
+def model_registry(gcn_adj, n_features: int = 15):
     """Neural models in the comparison: (name, builder, default lr).
 
     Group C (GNN-only) was removed from the comparison per the updated plan —
     classes remain in models.py. Comparison = trees + MLP/LSTM/GRU + hybrids +
     baselines, followed by ensemble models (src/ensemble.py).
+    n_features must match the input width (15 base + sentiment, plus
+    decomposition features when enabled).
     """
     return [
         # Group B — deep baselines (lr 1e-3)
-        ("MLP", lambda: MLP(), LR_DEEP),
-        ("LSTM", lambda: LSTMModel(), LR_DEEP),
-        ("GRU", lambda: GRUModel(), LR_DEEP),
+        ("MLP", lambda: MLP(n_features=n_features), LR_DEEP),
+        ("LSTM", lambda: LSTMModel(n_features=n_features), LR_DEEP),
+        ("GRU", lambda: GRUModel(n_features=n_features), LR_DEEP),
         # Group D — hybrids (lr 8e-4)
-        ("Dynamic-GNN+GRU", lambda: GraphTemporalModel("dynamic", "gru"), LR_GRAPH),
-        ("Dynamic-GNN+LSTM", lambda: GraphTemporalModel("dynamic", "lstm"), LR_GRAPH),
-        ("Static-Learned-GNN+GRU", lambda: GraphTemporalModel("static", "gru"), LR_GRAPH),
-        ("Static-Learned-GNN+LSTM", lambda: GraphTemporalModel("static", "lstm"), LR_GRAPH),
+        ("Dynamic-GNN+GRU", lambda: GraphTemporalModel("dynamic", "gru", n_features=n_features), LR_GRAPH),
+        ("Dynamic-GNN+LSTM", lambda: GraphTemporalModel("dynamic", "lstm", n_features=n_features), LR_GRAPH),
+        ("Static-Learned-GNN+GRU", lambda: GraphTemporalModel("static", "gru", n_features=n_features), LR_GRAPH),
+        ("Static-Learned-GNN+LSTM", lambda: GraphTemporalModel("static", "lstm", n_features=n_features), LR_GRAPH),
     ]
 
 
@@ -252,7 +300,7 @@ def run_neural_groups(df, X, y, n_train, y_scaler, results_dir=RESULTS_DIR):
     # GCN adjacency from TRAINING rows only.
     gcn_adj = compute_gcn_adjacency(X[:n_train])
 
-    registry = model_registry(gcn_adj)
+    registry = model_registry(gcn_adj, n_features=X.shape[1])
 
     best = load_best_params()
     records = []
@@ -279,6 +327,7 @@ def run_all_models(df: pd.DataFrame, results_dir: Path = RESULTS_DIR):
 
     records = []
     records += run_group_a(df, X, y, n_train, y_scaler, results_dir)
+    records.append(run_linear_leg(df, n_train, results_dir))
     records += run_neural_groups(df, X, y, n_train, y_scaler, results_dir)
 
     table = evaluate.summarize(records, results_dir)

@@ -38,7 +38,9 @@ ROOT = Path(__file__).resolve().parents[1]
 RESULTS_DIR = ROOT / "results"
 
 VAL_FRACTION = 0.15  # last 15% of train = validation (same as tune.py)
-BASELINES = {"Naive", "Naive-Drift", "SMA-5"}
+# ARIMA is excluded from the stack (no validation refit path) and reported
+# as a standalone linear-leg row, like the baselines.
+BASELINES = {"Naive", "Naive-Drift", "SMA-5", "ARIMA"}
 ENSEMBLES = {"Ensemble-Avg", "Ensemble-Stack"}
 RIDGE_ALPHA = 1.0
 
@@ -77,7 +79,8 @@ def _val_predictions(df, X, y, n_train, y_scaler, names, tmp_dir):
 
     best = train.load_best_params()
     gcn_adj = train.compute_gcn_adjacency(X[:n_train])
-    registry = dict((name, (build, lr)) for name, build, lr in train.model_registry(gcn_adj))
+    registry = dict((name, (build, lr))
+                    for name, build, lr in train.model_registry(gcn_adj, n_features=X.shape[1]))
 
     cols = {}
     for name in names:
