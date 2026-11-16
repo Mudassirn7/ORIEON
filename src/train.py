@@ -88,12 +88,13 @@ def make_windows(X: np.ndarray, y: np.ndarray, n_train: int,
 # Shared neural training loop
 # ---------------------------------------------------------------------------
 def train_torch(name: str, model: torch.nn.Module, Xtr, ytr, lr: float,
-                results_dir: Path = RESULTS_DIR):
+                results_dir: Path = RESULTS_DIR, epochs: int = EPOCHS,
+                wd: float = WEIGHT_DECAY):
     """AdamW (wd 1e-5), MSE on the scaled target, clip 1.0, exactly 40 epochs,
     no early stopping — final-epoch model is used and saved."""
     set_seed()
     model = model.to(DEVICE)
-    opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=WEIGHT_DECAY)
+    opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=wd)
     loss_fn = torch.nn.MSELoss()
 
     ds = TensorDataset(torch.from_numpy(Xtr), torch.from_numpy(ytr))
@@ -102,7 +103,7 @@ def train_torch(name: str, model: torch.nn.Module, Xtr, ytr, lr: float,
 
     history = []
     t0 = time.perf_counter()
-    for epoch in range(EPOCHS):
+    for epoch in range(epochs):
         model.train()
         total, nb = 0.0, 0
         for xb, yb in loader:
@@ -115,13 +116,13 @@ def train_torch(name: str, model: torch.nn.Module, Xtr, ytr, lr: float,
             total += loss.item()
             nb += 1
         history.append(total / nb)
-        print(f"  [{name}] epoch {epoch + 1:02d}/{EPOCHS}  train MSE {history[-1]:.6f}")
+        print(f"  [{name}] epoch {epoch + 1:02d}/{epochs}  train MSE {history[-1]:.6f}")
     seconds = time.perf_counter() - t0
 
     results_dir.mkdir(parents=True, exist_ok=True)
     torch.save(model.state_dict(), results_dir / f"{name}.pt")
     with open(results_dir / f"{name}_history.json", "w") as f:
-        json.dump({"model": name, "lr": lr, "epochs": EPOCHS,
+        json.dump({"model": name, "lr": lr, "epochs": epochs, "weight_decay": wd,
                    "batch_size": BATCH_SIZE, "seed": SEED,
                    "device": str(DEVICE), "train_loss": history}, f, indent=2)
     return model, history, seconds
@@ -149,6 +150,13 @@ def _finish_neural(name, model, seconds, Xte, dates_te, close_te, actual_te,
     evaluate.save_predictions(name, dates_te, actual_te, pred, results_dir)
     return {"name": name, "n_params": count_parameters(model),
             "train_seconds": seconds}
+
+
+def load_best_params():
+    """Tuned (lr, epochs, wd) per model from results/best_params.json.
+    If the file does not exist, the old fixed settings are used."""
+    f = RESULTS_DIR / "best_params.json"
+    return json.load(open(f)) if f.exists() else {}
 
 
 # ---------------------------------------------------------------------------
@@ -180,6 +188,9 @@ def run_group_a(df, X, y, n_train, y_scaler, results_dir=RESULTS_DIR):
         evaluate.save_predictions(name, dates_te, actual, pred, results_dir)
         records.append({"name": name, "n_params": None,
                         "train_seconds": seconds})
+    # Naive baseline: tomorrow's price = today's price (return = 0)
+    evaluate.save_predictions("Naive", dates_te, actual, close_te, results_dir)
+    records.append({"name": "Naive", "n_params": None, "train_seconds": 0.0})
     return records
 
 
@@ -214,10 +225,16 @@ def run_neural_groups(df, X, y, n_train, y_scaler, results_dir=RESULTS_DIR):
         ("Static-Learned-GNN+LSTM", lambda: GraphTemporalModel("static", "lstm"), LR_GRAPH),
     ]
 
+    best = load_best_params()
     records = []
     for name, build, lr in registry:
-        print(f"[neural] training {name} (lr={lr}) ...")
-        model, _, seconds = train_torch(name, build(), Xtr, ytr, lr, results_dir)
+        bp = best.get(name, {})
+        lr = bp.get("lr", lr)
+        ep = bp.get("epochs", EPOCHS)
+        wd = bp.get("wd", WEIGHT_DECAY)
+        print(f"[neural] training {name} (lr={lr}, epochs={ep}, wd={wd}) ...")
+        model, _, seconds = train_torch(name, build(), Xtr, ytr, lr, results_dir,
+                                        epochs=ep, wd=wd)
         records.append(_finish_neural(name, model, seconds, Xte, dates_te,
                                       close_te, actual_te, y_scaler, results_dir))
     return records
