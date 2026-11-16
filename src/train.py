@@ -28,7 +28,7 @@ from . import evaluate
 from .models import (GRUModel, LSTMModel, MLP, GraphOnlyModel,
                      GraphTemporalModel, compute_gcn_adjacency,
                      count_parameters, LOOKBACK)
-from .prepare_data import FEATURES, TARGET, split_indices
+from .prepare_data import FEATURES, PRICE_TARGET, TARGET, split_indices
 
 SEED = 42
 EPOCHS = 40
@@ -137,13 +137,16 @@ def predict_torch(model: torch.nn.Module, X: np.ndarray) -> np.ndarray:
     return np.concatenate(preds)
 
 
-def _finish_neural(name, model, seconds, Xte, yte_scaled, dates_te, y_scaler,
-                   results_dir=RESULTS_DIR):
-    """Predict, inverse-transform, save CSV, and return the summary record."""
-    pred_scaled = predict_torch(model, Xte)
-    actual = y_scaler.inverse_transform(yte_scaled.reshape(-1, 1)).ravel()
-    pred = y_scaler.inverse_transform(pred_scaled.reshape(-1, 1)).ravel()
-    evaluate.save_predictions(name, dates_te, actual, pred, results_dir)
+def to_price(close_t, scaled_ret, y_scaler):
+    """scaled log-return -> next-day price = Close_t * exp(return)."""
+    ret = y_scaler.inverse_transform(np.asarray(scaled_ret).reshape(-1, 1)).ravel()
+    return close_t * np.exp(ret)
+
+
+def _finish_neural(name, model, seconds, Xte, dates_te, close_te, actual_te,
+                   y_scaler, results_dir=RESULTS_DIR):
+    pred = to_price(close_te, predict_torch(model, Xte), y_scaler)
+    evaluate.save_predictions(name, dates_te, actual_te, pred, results_dir)
     return {"name": name, "n_params": count_parameters(model),
             "train_seconds": seconds}
 
@@ -155,8 +158,8 @@ def run_group_a(df, X, y, n_train, y_scaler, results_dir=RESULTS_DIR):
     from lightgbm import LGBMRegressor
 
     dates_te = df["Date"].iloc[n_train:]
-    yte_scaled = y[n_train:]
-    actual = y_scaler.inverse_transform(yte_scaled.reshape(-1, 1)).ravel()
+    close_te = df["Gold_Close"].iloc[n_train:].values
+    actual = df[PRICE_TARGET].iloc[n_train:].values
 
     trees = {
         "RandomForest": RandomForestRegressor(
@@ -173,9 +176,8 @@ def run_group_a(df, X, y, n_train, y_scaler, results_dir=RESULTS_DIR):
         t0 = time.perf_counter()
         est.fit(X[:n_train], y[:n_train])
         seconds = time.perf_counter() - t0
-        pred = y_scaler.inverse_transform(
-            est.predict(X[n_train:]).reshape(-1, 1)).ravel()
-        evaluate.save_predictions(name, dates_te, actual, pred)
+        pred = to_price(close_te, est.predict(X[n_train:]), y_scaler)
+        evaluate.save_predictions(name, dates_te, actual, pred, results_dir)
         records.append({"name": name, "n_params": None,
                         "train_seconds": seconds})
     return records
@@ -185,8 +187,10 @@ def run_group_a(df, X, y, n_train, y_scaler, results_dir=RESULTS_DIR):
 # Groups B, C, D — neural models
 # ---------------------------------------------------------------------------
 def run_neural_groups(df, X, y, n_train, y_scaler, results_dir=RESULTS_DIR):
-    Xtr, ytr, Xte, yte_scaled = make_windows(X, y, n_train)
+    Xtr, ytr, Xte, _ = make_windows(X, y, n_train)
     dates_te = df["Date"].iloc[n_train:]
+    close_te = df["Gold_Close"].iloc[n_train:].values
+    actual_te = df[PRICE_TARGET].iloc[n_train:].values
     print(f"[neural] device={DEVICE}  train windows={len(Xtr)}  test windows={len(Xte)}")
 
     # GCN adjacency from TRAINING rows only.
@@ -214,8 +218,8 @@ def run_neural_groups(df, X, y, n_train, y_scaler, results_dir=RESULTS_DIR):
     for name, build, lr in registry:
         print(f"[neural] training {name} (lr={lr}) ...")
         model, _, seconds = train_torch(name, build(), Xtr, ytr, lr, results_dir)
-        records.append(_finish_neural(name, model, seconds, Xte, yte_scaled,
-                                      dates_te, y_scaler, results_dir))
+        records.append(_finish_neural(name, model, seconds, Xte, dates_te,
+                                      close_te, actual_te, y_scaler, results_dir))
     return records
 
 

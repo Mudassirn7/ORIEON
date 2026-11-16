@@ -28,7 +28,8 @@ SENTIMENT_FEATURES = [
 ]
 
 FEATURES = BASE_FEATURES + SENTIMENT_FEATURES  # exactly 15
-TARGET = "y_close_t1"
+PRICE_TARGET = "y_close_t1"   # next-day close (metrics isi par bante hain)
+TARGET = "y_logret_t1"        # next-day log-return
 
 # Exact relevance terms from the protocol — literal substring matches.
 # NOTE: "fed " intentionally has a trailing space.
@@ -107,13 +108,14 @@ def build_dataset(data_dir: Path = DATA_DIR) -> tuple[pd.DataFrame, dict]:
     df["News_Count_Log"] = np.log1p(df["News_Count"])
 
     # Keep only protocol columns.
-    out = df[["Date"] + FEATURES + [TARGET]].copy()
+    df[TARGET] = np.log(df[PRICE_TARGET] / df["Gold_Close"])
+    out = df[["Date"] + FEATURES + [PRICE_TARGET, TARGET]].copy()
 
-    # 9. Sanity checks: all 15 features + target exist, no NaN.
+    # 9. Sanity checks: all 15 features + targets exist, no NaN.
     assert len(FEATURES) == 15, f"expected 15 features, got {len(FEATURES)}"
-    missing_cols = [c for c in FEATURES + [TARGET] if c not in out.columns]
+    missing_cols = [c for c in FEATURES + [PRICE_TARGET, TARGET] if c not in out.columns]
     assert not missing_cols, f"missing columns: {missing_cols}"
-    nan_counts = out[FEATURES + [TARGET]].isna().sum()
+    nan_counts = out[FEATURES + [PRICE_TARGET, TARGET]].isna().sum()
     assert int(nan_counts.sum()) == 0, f"NaN found:\n{nan_counts[nan_counts > 0]}"
 
     info = {
@@ -147,10 +149,10 @@ def add_split_info(df: pd.DataFrame, info: dict) -> dict:
                              str(df["Date"].iloc[n_train - 1].date())],
         "test_date_range": [str(df["Date"].iloc[n_train].date()),
                             str(df["Date"].iloc[-1].date())],
-        "train_target_max": float(df[TARGET].iloc[:n_train].max()),
-        "test_target_max": float(df[TARGET].iloc[n_train:].max()),
+        "train_target_max": float(df[PRICE_TARGET].iloc[:n_train].max()),
+        "test_target_max": float(df[PRICE_TARGET].iloc[n_train:].max()),
         "n_test_targets_above_train_max": int(
-            (df[TARGET].iloc[n_train:] > df[TARGET].iloc[:n_train].max()).sum()
+            (df[PRICE_TARGET].iloc[n_train:] > df[PRICE_TARGET].iloc[:n_train].max()).sum()
         ),
     }
     return info
