@@ -32,7 +32,10 @@ def dm_test(actual: pd.Series, pred_a: pd.Series, pred_b: pd.Series):
     d = (actual - pred_a) ** 2 - (actual - pred_b) ** 2
     d = d.dropna()
     n = len(d)
-    dm = float(d.mean() / (d.std(ddof=1) / math.sqrt(n)))
+    sd = d.std(ddof=1)
+    if sd == 0 or not math.isfinite(sd):  # identical predictions
+        return float("nan"), float("nan"), n
+    dm = float(d.mean() / (sd / math.sqrt(n)))
     p = 2.0 * (1.0 - norm_cdf(abs(dm)))
     return dm, p, n
 
@@ -74,6 +77,10 @@ def main() -> None:
         j = pa.merge(pb, on="Date", suffixes=("_a", "_b"))
         actual = j["actual_a"] if "actual_a" in j else j["actual"]
         dm, p, n = dm_test(actual, j["predicted_a"], j["predicted_b"])
+        if math.isnan(dm):
+            verdict = "identical predictions (baselines feature-independent)"
+            print(f"  {model:26s} {'—':>8s} {'—':>9s}  {verdict}")
+            continue
         if p >= 0.05:
             verdict = "farq significant NAHI"
         elif dm > 0:
