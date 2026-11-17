@@ -2,8 +2,9 @@
 
 Global training settings for all neural models (protocol, do not change):
   seed = 42 everywhere (Python, NumPy, PyTorch)
-  lookback window = 20 days, batch size = 64, exactly 40 epochs
-  no early stopping; use the final-epoch model
+  lookback window = 20 days, batch size = 64, max 100 epochs
+  early stopping on validation MSE (last 15% of train windows, patience 10);
+  the best-validation-epoch model is used and saved
   optimizer AdamW (weight_decay = 1e-5), MSE loss on the scaled target
   gradient-norm clipping at 1.0, torch.set_num_threads(4)
 
@@ -31,7 +32,9 @@ from .models import (GRUModel, LSTMModel, MLP, GraphOnlyModel,
 from .prepare_data import FEATURES, PRICE_TARGET, TARGET, split_indices
 
 SEED = 42
-EPOCHS = 40
+EPOCHS = 100        # max epochs (early stopping decides the real stop)
+PATIENCE = 10       # early-stopping patience on validation MSE
+VAL_FRACTION = 0.15  # last 15% of train windows = validation (time order)
 BATCH_SIZE = 64
 WEIGHT_DECAY = 1e-5
 CLIP_NORM = 1.0
@@ -90,18 +93,25 @@ def make_windows(X: np.ndarray, y: np.ndarray, n_train: int,
 def train_torch(name: str, model: torch.nn.Module, Xtr, ytr, lr: float,
                 results_dir: Path = RESULTS_DIR, epochs: int = EPOCHS,
                 wd: float = WEIGHT_DECAY):
-    """AdamW (wd 1e-5), MSE on the scaled target, clip 1.0, exactly 40 epochs,
-    no early stopping — final-epoch model is used and saved."""
+    """AdamW (wd 1e-5), MSE on the scaled target, clip 1.0, up to `epochs`
+    epochs with early stopping on validation MSE (last 15% of the train
+    windows, patience 10). The best-validation-epoch weights are restored,
+    used, and saved — never the final epoch. Test data is never touched."""
     set_seed()
     model = model.to(DEVICE)
     opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=wd)
     loss_fn = torch.nn.MSELoss()
 
-    ds = TensorDataset(torch.from_numpy(Xtr), torch.from_numpy(ytr))
+    n_fit = int(len(Xtr) * (1 - VAL_FRACTION))
+    Xfit, yfit = Xtr[:n_fit], ytr[:n_fit]
+    Xval, yval = Xtr[n_fit:], ytr[n_fit:]
+
+    ds = TensorDataset(torch.from_numpy(Xfit), torch.from_numpy(yfit))
     gen = torch.Generator().manual_seed(SEED)
     loader = DataLoader(ds, batch_size=BATCH_SIZE, shuffle=True, generator=gen)
 
-    history = []
+    history, val_history = [], []
+    best_val, best_epoch, best_state, wait = np.inf, 0, None, 0
     t0 = time.perf_counter()
     for epoch in range(epochs):
         model.train()
@@ -116,15 +126,33 @@ def train_torch(name: str, model: torch.nn.Module, Xtr, ytr, lr: float,
             total += loss.item()
             nb += 1
         history.append(total / nb)
-        print(f"  [{name}] epoch {epoch + 1:02d}/{epochs}  train MSE {history[-1]:.6f}")
+        val = float(np.mean((predict_torch(model, Xval) - yval) ** 2))
+        val_history.append(val)
+        print(f"  [{name}] epoch {epoch + 1:02d}/{epochs}  train MSE {history[-1]:.6f}  val MSE {val:.6f}")
+        if val < best_val - 1e-6:
+            best_val, best_epoch, wait = val, epoch + 1, 0
+            best_state = {k: v.detach().cpu().clone()
+                          for k, v in model.state_dict().items()}
+        else:
+            wait += 1
+            if wait >= PATIENCE:
+                print(f"  [{name}] early stop at epoch {epoch + 1} "
+                      f"(best epoch {best_epoch}, val MSE {best_val:.6f})")
+                break
     seconds = time.perf_counter() - t0
+
+    if best_state is not None:
+        model.load_state_dict(best_state)  # restore best-validation weights
 
     results_dir.mkdir(parents=True, exist_ok=True)
     torch.save(model.state_dict(), results_dir / f"{name}.pt")
     with open(results_dir / f"{name}_history.json", "w") as f:
-        json.dump({"model": name, "lr": lr, "epochs": epochs, "weight_decay": wd,
+        json.dump({"model": name, "lr": lr, "max_epochs": epochs,
+                   "best_epoch": best_epoch, "best_val_mse": best_val,
+                   "weight_decay": wd,
                    "batch_size": BATCH_SIZE, "seed": SEED,
-                   "device": str(DEVICE), "train_loss": history}, f, indent=2)
+                   "device": str(DEVICE), "train_loss": history,
+                   "val_loss": val_history}, f, indent=2)
     return model, history, seconds
 
 

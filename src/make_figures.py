@@ -77,6 +77,30 @@ def plot_training_curves(results_dir: Path = RESULTS_DIR,
     fig.savefig(figures_dir / "training_loss_curves.png", dpi=150)
     plt.close(fig)
 
+    # Validation curves (present since validation-based early stopping).
+    fig, ax = plt.subplots(figsize=(9, 5.5))
+    plotted = False
+    for path in histories:
+        with open(path) as f:
+            h = json.load(f)
+        if "val_loss" not in h:
+            continue
+        plotted = True
+        ax.plot(range(1, len(h["val_loss"]) + 1), h["val_loss"],
+                label=h["model"], lw=1.2)
+        best_ep = h.get("best_epoch")
+        if best_ep:
+            ax.axvline(best_ep, color=ax.lines[-1].get_color(),
+                       lw=0.6, alpha=0.35)
+    if plotted:
+        ax.set_title("Validation loss curves (vertical line = best epoch, model restored from there)")
+        ax.set_xlabel("Epoch")
+        ax.set_ylabel("Validation MSE")
+        ax.legend(fontsize=7, ncol=2)
+        fig.tight_layout()
+        fig.savefig(figures_dir / "validation_loss_curves.png", dpi=150)
+    plt.close(fig)
+
 
 def make_all(results_dir: Path = RESULTS_DIR, figures_dir: Path = FIGURES_DIR) -> None:
     figures_dir.mkdir(parents=True, exist_ok=True)
