@@ -12,6 +12,7 @@ Runnable standalone:  python -m src.make_figures
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import matplotlib
@@ -20,8 +21,8 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
-RESULTS_DIR = ROOT / "results"
-FIGURES_DIR = ROOT / "figures"
+RESULTS_DIR = ROOT / "results" / os.environ.get("ORIEON_RUN_TAG", "")
+FIGURES_DIR = ROOT / "figures" / os.environ.get("ORIEON_RUN_TAG", "")
 
 
 def plot_actual_vs_predicted(results_dir: Path = RESULTS_DIR,

@@ -10,6 +10,7 @@ Runnable standalone:  python -m src.prepare_data   (or)  python src/prepare_data
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import numpy as np
@@ -37,7 +38,17 @@ DECOMP_WINDOW = 120   # trailing days fed to VMD
 DECOMP_K = 3          # modes: IMF1, IMF2, residual-ish smooth mode
 DECOMP_MIN_LEN = 40   # shorter history -> zeros (first ~40 days of 2006 only)
 
-FEATURES = BASE_FEATURES + SENTIMENT_FEATURES + DECOMP_FEATURES
+# --- Sentiment ablation ---------------------------------------------------
+# ORIEON_FEATURE_SET=market  -> 7 market + 3 VMD features (NO sentiment)
+# ORIEON_FEATURE_SET=all     -> + 8 sentiment features (default, 18 total)
+# ORIEON_RUN_TAG=<name>      -> results/figures us tag ke subfolder mein save
+#                               hote hain, taake dono variants compare ho sakein.
+FEATURE_SET = os.environ.get("ORIEON_FEATURE_SET", "all")
+RUN_TAG = os.environ.get("ORIEON_RUN_TAG", "")
+if FEATURE_SET == "market":
+    FEATURES = BASE_FEATURES + DECOMP_FEATURES
+else:
+    FEATURES = BASE_FEATURES + SENTIMENT_FEATURES + DECOMP_FEATURES
 PRICE_TARGET = "y_close_t1"   # next-day close (metrics isi par bante hain)
 TARGET = "y_logret_t1"        # next-day log-return
 
@@ -55,7 +66,7 @@ TRAIN_FRACTION = 0.8
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data"
-RESULTS_DIR = ROOT / "results"
+RESULTS_DIR = ROOT / "results" / RUN_TAG
 
 
 def load_raw(data_dir: Path = DATA_DIR):
@@ -166,6 +177,8 @@ def build_dataset(data_dir: Path = DATA_DIR) -> tuple[pd.DataFrame, dict]:
 
     info = {
         "seed": SEED,
+        "feature_set": FEATURE_SET,
+        "run_tag": RUN_TAG,
         "feature_list": FEATURES,
         "target": TARGET,
         "n_rows_total": int(len(out)),
@@ -209,7 +222,7 @@ def prepare(data_dir: Path = DATA_DIR, results_dir: Path = RESULTS_DIR) -> tuple
     df, info = build_dataset(data_dir)
     info = add_split_info(df, info)
 
-    out_csv = results_dir / "processed_15_feature_data.csv"
+    out_csv = results_dir / f"processed_{len(FEATURES)}_feature_data.csv"
     df.to_csv(out_csv, index=False)
 
     with open(results_dir / "data_protocol.json", "w") as f:

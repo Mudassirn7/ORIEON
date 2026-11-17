@@ -6,6 +6,7 @@ Run:  python -m src.cv
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pandas as pd
@@ -14,7 +15,7 @@ from . import train
 from .prepare_data import prepare, split_indices
 
 ROOT = Path(__file__).resolve().parents[1]
-CV_DIR = ROOT / "results" / "cv"
+CV_DIR = ROOT / "results" / os.environ.get("ORIEON_RUN_TAG", "") / "cv"
 N_FOLDS = 10  # minimum 10
 
 

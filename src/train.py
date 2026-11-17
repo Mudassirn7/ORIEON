@@ -14,6 +14,7 @@ Device: uses CUDA when available, otherwise CPU.
 from __future__ import annotations
 
 import json
+import os
 import random
 import time
 from pathlib import Path
@@ -42,7 +43,7 @@ LR_DEEP = 1e-3   # Group B
 LR_GRAPH = 8e-4  # Groups C and D
 
 ROOT = Path(__file__).resolve().parents[1]
-RESULTS_DIR = ROOT / "results"
+RESULTS_DIR = ROOT / "results" / os.environ.get("ORIEON_RUN_TAG", "")
 
 torch.set_num_threads(4)
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")

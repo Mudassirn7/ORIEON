@@ -82,14 +82,14 @@ def main() -> None:
     print(f"  {'Model':26s} {'pred_ret_std':>12s} {'corr(pred,actual)':>18s}")
     rows = []
     for path in sorted(train.RESULTS_DIR.glob("*_predictions.csv")):
-        name = path.stem.replace("_predictions", "")
+        name = path.stem.replace("_test_predictions", "")
         p = pd.read_csv(path)
-        if not {"Actual", "Predicted"} <= set(p.columns) or len(p) < 3:
+        if not {"actual", "predicted"} <= set(p.columns) or len(p) < 3:
             continue
-        # row i: Actual = close_{i+1}; implied predicted return = Pred_i / close_i - 1
-        prev_close = p["Actual"].shift(1)
-        pred_ret = p["Predicted"] / prev_close - 1.0
-        act_ret = p["Actual"] / prev_close - 1.0
+        # row i: actual = close_{i+1}; implied predicted return = pred_i / close_i - 1
+        prev_close = p["actual"].shift(1)
+        pred_ret = p["predicted"] / prev_close - 1.0
+        act_ret = p["actual"] / prev_close - 1.0
         std = float(np.nanstd(pred_ret.values[1:]))
         c = float(pd.Series(pred_ret.values[1:]).corr(pd.Series(act_ret.values[1:])))
         rows.append((name, std, c))
