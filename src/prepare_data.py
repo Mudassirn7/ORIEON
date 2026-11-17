@@ -185,7 +185,7 @@ def build_dataset(data_dir: Path = DATA_DIR) -> tuple[pd.DataFrame, dict]:
         "date_range": [str(out["Date"].min().date()), str(out["Date"].max().date())],
         "n_headlines_total": int(len(news)),
         "n_headlines_relevant": int(len(news_rel)),
-        "n_gold_days_with_news": int((out["News_Available"] == 1).sum()),
+        "n_gold_days_with_news": int((df["News_Available"] == 1).sum()),
         "train_fraction": TRAIN_FRACTION,
         "split": {},  # filled by add_split_info
     }
