@@ -222,21 +222,10 @@ def run_group_a(df, X, y, n_train, y_scaler, results_dir=RESULTS_DIR):
         evaluate.save_predictions(name, dates_te, actual, pred, results_dir)
         records.append({"name": name, "n_params": None,
                         "train_seconds": seconds})
-    # --- Baselines ----------------------------------------------------------
-    # (Naive persistence removed per updated plan — it carries no signal.)
-    # Naive-Drift: today's price + average historical daily move.
-    # Drift = mean TRAIN log-return only (no test leakage).
-    drift_ret = float(df[TARGET].iloc[:n_train].mean())
-    pred = close_te * np.exp(drift_ret)
-    evaluate.save_predictions("Naive-Drift", dates_te, actual, pred,
-                              results_dir)
-    records.append({"name": "Naive-Drift", "n_params": None,
-                    "train_seconds": 0.0})
 
-    # SMA-5: tomorrow's price = mean of the last 5 closes (smooths noise).
-    sma5 = df["Gold_Close"].rolling(5).mean().iloc[n_train:].values
-    evaluate.save_predictions("SMA-5", dates_te, actual, sma5, results_dir)
-    records.append({"name": "SMA-5", "n_params": None, "train_seconds": 0.0})
+    # NOTE: Naive persistence, Naive-Drift aur SMA-5 baselines remove kar diye
+    # gaye — wo features use nahi karte, is liye feature-based models se
+    # comparison fair nahi banta.
 
     # Stage 3: RandomForest feature-importance report (training rows only).
     rf = trees["RandomForest"]
