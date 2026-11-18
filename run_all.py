@@ -26,11 +26,22 @@ Outputs:
 
 from __future__ import annotations
 
+import shutil
 import time
 
 import pandas as pd
 
 from src import make_figures, prepare_data, train
+
+
+def _clean_outputs() -> None:
+    """Puraney runs ki sab files hatao — results/ aur figures/ hamesha sirf
+    is run ke outputs rakhte hain (koi stale model file nahi rehti)."""
+    for folder in (train.RESULTS_DIR, make_figures.FIGURES_DIR):
+        if folder.exists():
+            shutil.rmtree(folder)
+        folder.mkdir(parents=True, exist_ok=True)
+    print("[run_all] cleaned results/ and figures/")
 
 
 def main() -> None:
@@ -39,6 +50,9 @@ def main() -> None:
     print("=" * 72)
     print("ORIEON — Gold Price Prediction (GRN-MLP Ensemble, 4-experiment ablation)")
     print("=" * 72)
+
+    print("\n[0/3] Cleaning previous outputs")
+    _clean_outputs()
 
     print("\n[1/3] Data preparation")
     df, _ = prepare_data.prepare()
