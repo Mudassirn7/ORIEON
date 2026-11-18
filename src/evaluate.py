@@ -16,6 +16,10 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 RESULTS_DIR = ROOT / "results"
 
+# Fixed protocol order for all results tables (comparison asaan ho).
+MODEL_ORDER = ["LSTM", "LightGBM", "RandomForest", "MLP", "GRN",
+               "Ensemble-GRN-MLP"]
+
 
 def compute_metrics(actual: np.ndarray, predicted: np.ndarray) -> dict:
     """MAE, MSE, RMSE, R^2, MAPE (division-by-zero guarded), n."""
@@ -61,9 +65,10 @@ def load_saved_metrics(results_dir: Path = RESULTS_DIR) -> dict:
 
 
 def summarize(records: list[dict], results_dir: Path = RESULTS_DIR) -> pd.DataFrame:
-    """Combined results table sorted by RMSE, with parameter counts and
-    training seconds. `records` carry name/n_params/train_seconds; metrics are
-    recomputed from the saved prediction files."""
+    """Combined results table in the fixed protocol MODEL_ORDER, with
+    parameter counts and training seconds. `records` carry
+    name/n_params/train_seconds; metrics are recomputed from the saved
+    prediction files."""
     metrics = load_saved_metrics(results_dir)
     rows = []
     for rec in records:
@@ -74,7 +79,10 @@ def summarize(records: list[dict], results_dir: Path = RESULTS_DIR) -> pd.DataFr
                "train_seconds": ts}
         row.update(metrics[rec["name"]])
         rows.append(row)
-    table = pd.DataFrame(rows).sort_values("RMSE").reset_index(drop=True)
+    table = pd.DataFrame(rows)
+    order = {m: i for i, m in enumerate(MODEL_ORDER)}
+    table["_o"] = table["Model"].map(lambda m: order.get(m, len(order)))
+    table = table.sort_values("_o").drop(columns="_o").reset_index(drop=True)
     out = results_dir / "test_results.csv"
     table.to_csv(out, index=False)
     print("[evaluate] wrote", out)

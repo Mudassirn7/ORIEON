@@ -31,7 +31,7 @@ import time
 
 import pandas as pd
 
-from src import make_figures, prepare_data, train
+from src import evaluate, make_figures, prepare_data, train
 
 
 def _clean_outputs() -> None:
@@ -69,11 +69,18 @@ def main() -> None:
         table.insert(1, "n_features", len(feats))
         tables.append(table)
 
-    summary = pd.concat(tables, ignore_index=True)
+    # --- Single wide summary CSV: rows = models (fixed protocol order),
+    #     column blocks = one metrics group per experiment. Comparison easy.
+    METRICS = ["MAE", "MSE", "RMSE", "R2", "MAPE"]
+    wide = pd.DataFrame({"Model": evaluate.MODEL_ORDER})
+    for exp_name, table in zip(prepare_data.EXPERIMENTS, tables):
+        t = table.set_index("Model")
+        for m in METRICS:
+            wide[f"{exp_name}_{m}"] = wide["Model"].map(t[m]).round(4)
     out = train.RESULTS_DIR / "results_all_experiments.csv"
-    summary.to_csv(out, index=False)
+    wide.to_csv(out, index=False)
     print(f"\n[summary] wrote {out}")
-    print(summary.round(4).to_string(index=False))
+    print(wide.to_string(index=False))
 
     print("\n[3/3] Figures")
     make_figures.make_all()

@@ -64,10 +64,13 @@ Implementation: `src/models.py` (`GLU`, `GRNBlock`, `GRNMLPEnsemble`).
 
 ## Benchmark Models
 
-1. Random Forest (RF)
+1. Long Short-Term Memory (LSTM)
 2. LightGBM (LGBM)
-3. Long Short-Term Memory (LSTM)
+3. Random Forest (RF)
 4. Multi-Layer Perceptron (MLP)
+5. Gated Residual Network (GRN) — standalone, the ensemble's dynamic branch alone
+
+Proposed: **Ensemble-GRN-MLP** (GRN + MLP with dynamic gated blending).
 
 ## Ablation Study Design (4 Experiments)
 
@@ -135,9 +138,10 @@ On Colab (torch/CUDA preinstalled) only LightGBM is needed:
 
 ## Outputs
 
-- `results/results_all_experiments.csv` — **single table**: 4 experiments × 5
-  models, all metrics
-- `results/<Exp>/test_results.csv` — per-experiment table
+- `results/results_all_experiments.csv` — **single wide table**: rows = 6
+  models (fixed order: LSTM, LightGBM, RandomForest, MLP, GRN,
+  Ensemble-GRN-MLP), column blocks = MAE/MSE/RMSE/R²/MAPE per experiment
+- `results/<Exp>/test_results.csv` — per-experiment table (same model order)
 - `results/<Exp>/*_test_predictions.csv` — saved test predictions per model
 - `figures/training_loss_curves.png` — per-experiment training curves
 - `figures/comparison_rmse.png`, `figures/comparison_r2.png` — model ×

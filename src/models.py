@@ -106,6 +106,28 @@ class GRNBlock(nn.Module):
         return self.norm(x + self.glu(h))
 
 
+class GRNModel(nn.Module):
+    """Standalone Gated Residual Network (benchmark): flattened window ->
+    input projection -> 2 stacked GRN blocks -> shared head.
+
+    Yeh GRN-MLP ensemble ka dynamic branch akela hai — comparison ke liye,
+    taake gate-filtering ka individual contribution napa ja sake."""
+
+    def __init__(self, n_features: int, lookback: int = LOOKBACK,
+                 hidden: int = HIDDEN):
+        super().__init__()
+        self.in_proj = nn.Linear(lookback * n_features, hidden)
+        self.grn1 = GRNBlock(hidden, hidden)
+        self.grn2 = GRNBlock(hidden, hidden)
+        self.head = make_head(hidden)
+
+    def forward(self, x):  # x: (B, T, F)
+        b = x.shape[0]
+        h = F.elu(self.in_proj(x.reshape(b, -1)))
+        h = self.grn2(self.grn1(h))
+        return self.head(h).squeeze(-1)
+
+
 class GRNMLPEnsemble(nn.Module):
     """Proposed architecture.
 

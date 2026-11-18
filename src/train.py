@@ -31,7 +31,8 @@ from sklearn.preprocessing import StandardScaler
 from torch.utils.data import DataLoader, TensorDataset
 
 from . import evaluate
-from .models import (LSTMModel, MLP, GRNMLPEnsemble, count_parameters, LOOKBACK)
+from .models import (LSTMModel, MLP, GRNModel, GRNMLPEnsemble,
+                     count_parameters, LOOKBACK)
 from .prepare_data import PRICE_TARGET, TARGET, split_indices
 
 SEED = 42
@@ -201,11 +202,13 @@ def tree_registry():
 
 
 def neural_registry(n_features: int):
-    """Neural models: 2 benchmarks + proposed GRN-MLP ensemble."""
+    """Neural models: 3 benchmarks (MLP, LSTM, standalone GRN) + the
+    proposed Ensemble-GRN-MLP."""
     return [
         ("MLP", lambda: MLP(n_features=n_features)),
         ("LSTM", lambda: LSTMModel(n_features=n_features)),
-        ("GRN-MLP", lambda: GRNMLPEnsemble(n_features=n_features)),
+        ("GRN", lambda: GRNModel(n_features=n_features)),
+        ("Ensemble-GRN-MLP", lambda: GRNMLPEnsemble(n_features=n_features)),
     ]
 
 

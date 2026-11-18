@@ -65,11 +65,13 @@ def plot_training_curves(results_dir: Path = RESULTS_DIR,
 
 def plot_comparison(results_dir: Path = RESULTS_DIR,
                     figures_dir: Path = FIGURES_DIR) -> None:
+    from .evaluate import MODEL_ORDER
     df = _load_all_tables(results_dir)
     for col, fname, ylabel in [("RMSE", "comparison_rmse.png", "RMSE"),
                                ("R2", "comparison_r2.png", "R$^2$")]:
         pivot = df.pivot(index="Model", columns="Experiment", values=col)
-        pivot = pivot.loc[pivot.mean(axis=1).sort_values().index]
+        # Fixed protocol model order (same as results tables).
+        pivot = pivot.loc[[m for m in MODEL_ORDER if m in pivot.index]]
         fig, ax = plt.subplots(figsize=(12, 5.5))
         pivot.plot(kind="bar", ax=ax, width=0.8)
         ax.set_title(f"Model comparison — {ylabel} (test set, per experiment)")
