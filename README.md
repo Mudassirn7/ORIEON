@@ -1,15 +1,102 @@
-# ORIEON — Gold Price Forecasting with ML, DL, and Graph Neural Networks using Financial-News Sentiment
+# Gold Price Prediction Using a Hybrid GRN-MLP Ensemble with Multi-Dimensional Sentiment Analysis
 
-ORIEON predicts the **next-day gold closing price** from a 15-feature daily
-dataset that combines market variables (gold, DXY, silver, crude oil, UST10Y,
-VIX, S&P 500) with 8 aggregated FinBERT news-sentiment features. Fourteen
-models are trained under one fixed, supervisor-approved protocol: tree
-baselines, deep sequence baselines, five GNN-only candidates over a daily
-15-node feature graph, and four GNN + recurrent hybrids.
+## Project Overview
 
-> **Status:** the results table below is intentionally blank — it is filled in
-> after running `python run_all.py`. No numbers in this repository are
-> pre-computed; everything is produced by the pipeline itself.
+Financial markets—especially Gold—exhibit both stable macroeconomic trends and
+sudden volatility driven by geopolitical news and market sentiment. Traditional
+static models assign fixed weights to input features, failing to adapt during
+sudden market shocks.
+
+This repository implements a **Hybrid Gated Residual Network and Multi-Layer
+Perceptron (GRN-MLP) Ensemble** for gold price forecasting using **15 features**
+(1 base price + 6 external macroeconomic features + 8 sentiment features),
+alongside a comprehensive **ablation study** and benchmark comparisons against
+standard machine learning and deep learning models.
+
+> **Status:** no numbers in this repository are pre-computed. Every table and
+> figure is produced by running `python run_all.py`.
+
+## Dataset & Feature Description (15 Features)
+
+### 1. Base & External Macroeconomic Features (7)
+
+| # | Feature | Description |
+|---|---------|-------------|
+| 1 | `Gold_Close` | Daily Gold closing price (USD) |
+| 2 | `DXY` | US Dollar Index |
+| 3 | `Silver` | Daily Silver closing price |
+| 4 | `CrudeOil` | Crude Oil price |
+| 5 | `UST10Y` | US 10-Year Treasury Yield |
+| 6 | `VIX` | CBOE Volatility Index (market fear gauge) |
+| 7 | `SP500` | S&P 500 stock market index |
+
+### 2. Multi-Dimensional Sentiment Features (8)
+
+| # | Feature | Description |
+|---|---------|-------------|
+| 8 | `Sentiment_Mean` | Daily average sentiment score of gold-related news |
+| 9 | `Sentiment_Std` | Std of sentiment scores (headline disagreement) |
+| 10 | `Sentiment_Min` | Most negative headline sentiment score of the day |
+| 11 | `Sentiment_Max` | Most positive headline sentiment score of the day |
+| 12 | `Positive_Ratio` | Proportion of positive news headlines |
+| 13 | `Negative_Ratio` | Proportion of negative news headlines |
+| 14 | `News_Available` | 1 if gold-related news is available, else 0 |
+| 15 | `News_Count_Log` | Log-transformed daily news volume: log(1 + count) |
+
+Sentiment scores come from FinBERT-scored headlines, filtered by a fixed
+gold/macro relevance vocabulary and aggregated per trading day (see
+`src/prepare_data.py`).
+
+## Proposed Architecture: GRN-MLP Ensemble
+
+- **Branch 1 — Gated Residual Network (GRN):** the dynamic neural component.
+  Gated Linear Units (GLU) with skip connections filter input features
+  conditioned on the market state — suppressing noisy sentiment signals during
+  calm periods and amplifying them during high-volatility news shocks.
+- **Branch 2 — Multi-Layer Perceptron (MLP):** captures deep, non-linear
+  static relationships across macroeconomic indicators and historical
+  Gold_Close context.
+- **Ensemble Fusion (Dynamic Gated Blending):** a final per-sample gating
+  layer weighs the GRN and MLP branch outputs for each time step, producing an
+  adaptive final forecast.
+
+Implementation: `src/models.py` (`GLU`, `GRNBlock`, `GRNMLPEnsemble`).
+
+## Benchmark Models
+
+1. Random Forest (RF)
+2. LightGBM (LGBM)
+3. Long Short-Term Memory (LSTM)
+4. Multi-Layer Perceptron (MLP)
+
+## Ablation Study Design (4 Experiments)
+
+| Experiment | Features used | Count |
+|---|---|---|
+| **Exp1 — Price Only** | Gold_Close | 1 |
+| **Exp2 — Macro** | Gold_Close + 6 macro indicators | 7 |
+| **Exp3 — Sentiment** | Gold_Close + 8 sentiment features | 9 |
+| **Exp4 — All** | full feature set | 15 |
+
+The error reduction (RMSE, MAE, MAPE) between **Exp2 (Macro)** and
+**Exp4 (All)** directly quantifies the contribution of multi-dimensional
+sentiment dynamics.
+
+## Evaluation Metrics
+
+RMSE, MAE, MAPE, and R² — always computed on the **price scale** from saved
+prediction arrays.
+
+## Methodological notes (leakage control)
+
+- Models predict the **next-day log-return**; predictions are converted back
+  to price (`Close_t * exp(r)`) before metrics — this keeps the regression
+  target stationary while metrics stay interpretable.
+- Scalers are fit on **training rows only**; the split is chronological 80/20,
+  never shuffled.
+- Neural models use **validation-based early stopping** (last 15% of train
+  windows, patience 10, max 100 epochs); test data is never used for any
+  selection.
 
 ## Repository layout
 
@@ -17,15 +104,15 @@ baselines, deep sequence baselines, five GNN-only candidates over a daily
 ORIEON/
 ├── README.md
 ├── requirements.txt        # pinned versions, Python 3.10–3.12
-├── run_all.py              # one command: data prep -> A -> B -> C -> D -> metrics -> figures
+├── run_all.py              # one command: data -> 4 experiments x 5 models -> table + figures
 ├── src/
-│   ├── prepare_data.py     # relevance filter + daily sentiment aggregation + sanity checks
-│   ├── models.py           # MLP/LSTM/GRU, GraphOnlyModel, GraphTemporalModel
-│   ├── train.py            # shared training loop with the fixed protocol settings
-│   ├── evaluate.py         # metrics + prediction saving + combined results table
-│   └── make_figures.py
+│   ├── prepare_data.py     # relevance filter + daily sentiment aggregation + 4 feature modes
+│   ├── models.py           # MLP, LSTM (benchmarks), GRN-MLP Ensemble (proposed)
+│   ├── train.py            # shared training loop (early stopping, fixed protocol)
+│   ├── evaluate.py         # metrics + prediction saving + results tables
+│   └── make_figures.py     # loss curves, RMSE/R2 comparisons, prediction line graphs
 ├── data/                   # gold_clean.csv and news_with_scores.csv
-├── results/                # generated outputs (predictions, metrics, weights, histories)
+├── results/                # results_all_experiments.csv + per-experiment details
 └── figures/                # generated plots
 ```
 
@@ -39,83 +126,23 @@ pip install -r requirements.txt
 python run_all.py
 ```
 
-Each stage is also runnable individually:
+On Colab (torch/CUDA preinstalled) only LightGBM is needed:
 
-```bash
-python -m src.prepare_data    # builds results/processed_15_feature_data.csv + data_protocol.json
-python -m src.train           # trains all 14 models, saves weights/predictions/metrics
-python -m src.evaluate        # rebuilds results/test_results.csv from saved predictions
-python -m src.make_figures    # regenerates figures/ from saved outputs
+```python
+!pip install -q lightgbm
+!python run_all.py
 ```
 
-**Hardware:** the code automatically uses CUDA if available (`device=cuda`),
-otherwise CPU. All protocol settings (`torch.set_num_threads(4)`, batch size
-64, 40 epochs) are identical on both. Report your library versions and device
-alongside results (they are printed at run start and stored in each
-`*_history.json`).
+## Outputs
 
-## Protocol summary
-
-- **Target:** `y_close_t1` (next-day gold close), regression.
-- **Features (exactly 15):** `Gold_Close, DXY, Silver, CrudeOil, UST10Y, VIX,
-  SP500` + 8 sentiment features (`Sentiment_Mean/Std/Min/Max`,
-  `Positive_Ratio`, `Negative_Ratio`, `News_Available`, `News_Count_Log`)
-  built by filtering headlines against a fixed relevance-term list and
-  aggregating FinBERT scores per calendar day (left-joined onto trading days,
-  missing days filled with 0, `News_Count_Log = log1p(count)`).
-- **Split:** chronological 80/20 (4,027 train / 1,007 test), no validation
-  set, never shuffled. `StandardScaler`s for inputs and target are fit on
-  training rows only; metrics are computed on inverse-transformed predictions.
-- **Neural settings (all groups):** seed 42 (Python/NumPy/PyTorch), lookback
-  20 days, batch 64, exactly 40 epochs, no early stopping (final-epoch model),
-  AdamW (weight_decay 1e-5), MSE on the scaled target, gradient clipping 1.0,
-  `torch.set_num_threads(4)`. Head: `Dropout(0.2) → Linear(in, 32) → ReLU →
-  Linear(32, 1)`.
-- **Group A — trees (current-day vector):** RandomForest (500 trees,
-  max_features 0.7, seed 42); LightGBM (400 rounds, lr 0.05, depth 3,
-  15 leaves, subsample 0.85, colsample 0.8, reg_lambda 1.0).
-- **Group B — deep baselines (lr 1e-3, input 20×15):** MLP (300→128→64),
-  LSTM (hidden 64), GRU (hidden 64).
-- **Group C — GNN-only (lr 8e-4):** the 15 features are nodes of a daily
-  graph; `h = tanh(value_proj(x) + node_embedding)` with WIDTH 48; readout
-  `concat(mean-pool(z), z[Gold_Close]) → Linear(96,48) → Tanh`, then mean over
-  the 20 days. Variants: GCN (fixed |Pearson| adjacency from training rows,
-  diag 1, D^-1/2 A D^-1/2), GraphSAGE (neighbour mean excluding self), GAT
-  (additive attention), Static-Learned (softmax over learnable logits + I),
-  Dynamic (softmax(QKᵀ/√48 + I)).
-- **Group D — hybrids (lr 8e-4):** the 20 daily 48-dim readouts feed a GRU or
-  LSTM (hidden 64) instead of day-averaging; last hidden state → head. All
-  four combinations of {Dynamic, Static-Learned} × {GRU, LSTM}.
-
-## Results (filled in after running)
-
-> ⚠️ **To be filled after running `python run_all.py`.** Paste the contents of
-> the generated `results/test_results.csv` here. Do not edit the numbers.
-
-| Model | n_params | train_seconds | MAE | MSE | RMSE | R² | MAPE | n |
-|---|---|---|---|---|---|---|---|---|
-| _to be filled after running_ | | | | | | | | |
-
-Reference values from the original approved run (sanity check only — never
-hard-coded or targeted; small deviations across library versions/hardware are
-expected): RandomForest RMSE 1438.41 · LightGBM 1426.53 · MLP 612.35
-(R² = 0.6462) · LSTM 1084.42 · GRU 960.94 · GCN-only 1337.21 ·
-GraphSAGE-only 1295.53 · GAT-only 1356.79 · Static-Learned-GNN-only 1274.50 ·
-Dynamic-GNN-only 1245.09. Data sanity references: 5,034 rows; 11,663 relevant
-headlines of 14,173; 3,489 gold days with retained news.
-
-## Limitations and integrity notes
-
-- **Regime shift:** 674 of 1,007 test targets (66.9%) exceed the maximum
-  training target (train max ≈ 2,069 vs test max ≈ 5,318). Weak or negative
-  R² for some models is expected and legitimate; the split is deliberately
-  kept chronological and is not altered to "fix" this.
-- **No validation set:** the protocol uses a single chronological 80/20 split.
-  The test set is never used for hyperparameter tuning, early stopping,
-  checkpoint selection, or model selection.
-- **No "final hybrid" is selected:** because there is no validation set, no
-  winner is crowned from the test table. All four hybrids are reported
-  transparently; any future final-hybrid selection requires a separate,
-  documented selection protocol.
-- **Reproducibility:** exact numbers vary slightly across library versions and
-  hardware; always report the versions printed at run start.
+- `results/results_all_experiments.csv` — **single table**: 4 experiments × 5
+  models, all metrics
+- `results/<Exp>/test_results.csv` — per-experiment table
+- `results/<Exp>/*_test_predictions.csv` — saved test predictions per model
+- `figures/training_loss_curves.png` — per-experiment training curves
+- `figures/comparison_rmse.png`, `figures/comparison_r2.png` — model ×
+  experiment comparison bars
+- `figures/predictions/<Exp>/<Model>.png` — actual vs predicted, per model
+  (separate)
+- `figures/predictions/<Exp>_combined.png` — all models vs actual, per
+  experiment (combined)

@@ -1,21 +1,20 @@
-"""ORIEON evaluation — Section 5 of the approved protocol.
+"""ORIEON evaluation — GRN-MLP Ensemble project.
 
 Metrics are always computed from the saved prediction arrays
-(results/<ModelName>_test_predictions.csv), inverse-transformed back to the
-original price scale.
+(results/<exp>/<ModelName>_test_predictions.csv), inverse-transformed back to
+the original price scale.
 """
 
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
-RESULTS_DIR = ROOT / "results" / os.environ.get("ORIEON_RUN_TAG", "")
+RESULTS_DIR = ROOT / "results"
 
 
 def compute_metrics(actual: np.ndarray, predicted: np.ndarray) -> dict:
